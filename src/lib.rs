@@ -2,6 +2,7 @@ use std::io::Write;
 use sqlparser::ast::*;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
+mod mssql;
 pub trait SqlWriter {
     fn write_assignment(&mut self, node: &Assignment, w: &mut impl Write) -> Res<()>;
     fn write_column_def(&mut self, node: &ColumnDef, w: &mut impl Write) -> Res<()>;
