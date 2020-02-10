@@ -1,0 +1,48 @@
+use std::io::Write;
+use sqlparser::ast::*;
+
+type Res<T> = Result<T, Box<dyn std::error::Error>>;
+pub trait SqlWriter {
+    fn write_assignment(&mut self, node: &Assignment, w: &mut impl Write) -> Res<()>;
+    fn write_column_def(&mut self, node: &ColumnDef, w: &mut impl Write) -> Res<()>;
+    fn write_column_options_def(&mut self, node: &ColumnOptionDef, w: &mut impl Write) -> Res<()>;
+    fn write_cte(&mut self, node: &Cte, w: &mut impl Write) -> Res<()>;
+    fn write_fetch(&mut self, node: &Fetch, w: &mut impl Write) -> Res<()>;
+    fn write_function(&mut self, node: &Function, w: &mut impl Write) -> Res<()>;
+    fn write_join(&mut self, node: &Join, w: &mut impl Write) -> Res<()>;
+    fn write_object_name(&mut self, node: &ObjectName, w: &mut impl Write) -> Res<()>;
+    fn write_order_by_expr(&mut self, node: &OrderByExpr, w: &mut impl Write) -> Res<()>;
+    fn write_query(&mut self, node: &Query, w: &mut impl Write) -> Res<()>;
+    fn write_select(&mut self, node: &Select, w: &mut impl Write) -> Res<()>;	
+    fn write_sql_option(&mut self, node: &SqlOption, w: &mut impl Write) -> Res<()>;
+    fn write_table_alias(&mut self, node: &TableAlias, w: &mut impl Write) -> Res<()>;
+    fn write_table_with_joins(&mut self, node: &TableWithJoins, w: &mut impl Write) -> Res<()>;
+    fn write_values(&mut self, node: &Values, w: &mut impl Write) -> Res<()>;
+    fn write_window_frame(&mut self, node: &WindowFrame, w: &mut impl Write) -> Res<()>;
+    fn write_window_spec(&mut self, node: &WindowSpec, w: &mut impl Write) -> Res<()>;
+    fn write_alter_table_operation(&mut self, node: &AlterTableOperation, w: &mut impl Write) -> Res<()>;
+    fn write_binary_operator(&mut self, node: &BinaryOperator, w: &mut impl Write) -> Res<()>;
+    fn write_column_option(&mut self, node: &ColumnOption, w: &mut impl Write) -> Res<()>;
+    fn write_data_type(&mut self, node: &DataType, w: &mut impl Write) -> Res<()>;
+    fn write_date_time_field(&mut self, node: &DateTimeField, w: &mut impl Write) -> Res<()>;
+    fn write_expr(&mut self, node: &Expr, w: &mut impl Write) -> Res<()>;
+    fn write_file_format(&mut self, node: &FileFormat, w: &mut impl Write) -> Res<()>;
+    fn write_join_constraint(&mut self, node: &JoinConstraint, w: &mut impl Write) -> Res<()>;
+    fn write_join_operator(&mut self, node: &JoinOperator, w: &mut impl Write) -> Res<()>;
+    fn write_object_type(&mut self, node: &ObjectType, w: &mut impl Write) -> Res<()>;
+    fn write_select_item(&mut self, node: &SelectItem, w: &mut impl Write) -> Res<()>;
+    fn write_set_expr(&mut self, node: &SetExpr, w: &mut impl Write) -> Res<()>;
+    fn write_set_operator(&mut self, node: &SetOperator, w: &mut impl Write) -> Res<()>;
+    fn write_set_variable_value(&mut self, node: &SetVariableValue, w: &mut impl Write) -> Res<()>;
+    fn write_show_statement_filter(&mut self, node: &ShowStatementFilter, w: &mut impl Write) -> Res<()>;
+    fn write_statement(&mut self, node: &Statement, w: &mut impl Write) -> Res<()>;
+    fn write_table_constraint(&mut self, node: &TableConstraint, w: &mut impl Write) -> Res<()>;
+    fn write_table_factor(&mut self, node: &TableFactor, w: &mut impl Write) -> Res<()>;
+    fn write_transaction_access_mode(&mut self, node: &TransactionAccessMode, w: &mut impl Write) -> Res<()>;
+    fn write_transaction_isolation_level(&mut self, node: &TransactionIsolationLevel, w: &mut impl Write) -> Res<()>;
+    fn write_transaction_mode(&mut self, node: &TransactionMode, w: &mut impl Write) -> Res<()>;
+    fn write_unary_operator(&mut self, node: &UnaryOperator, w: &mut impl Write) -> Res<()>;
+    fn write_value(&mut self, node: &Value, w: &mut impl Write) -> Res<()>;
+    fn write_window_frame_bound(&mut self, node: &WindowFrameBound, w: &mut impl Write) -> Res<()>;
+    fn write_window_frame_units(&mut self, node: &WindowFrameUnits, w: &mut impl Write) -> Res<()>;
+}
