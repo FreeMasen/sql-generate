@@ -11,6 +11,14 @@ pub struct MsSqlWriter<W> {
 
 impl<W> MsSqlWriter<W>
 where W: Write {
+    pub fn new(prefix: &'static str, writer: W) -> Self {
+        Self {
+            indent: 0,
+            prefix,
+            current_line_len: 0,
+            writer
+        }
+    }
     fn write_new_line(&mut self) -> Res<()> {
         self.writer.write_all(b"\n")?;
         self.current_line_len = 0;
@@ -30,46 +38,117 @@ where W: Write {
         Ok(())
     }
 
-    fn write_seperated(&mut self, sep: &str, idents: &[String]) -> Res<()> {
+    fn write_separated(&mut self, sep: &str, idents: &[String]) -> Res<()> {
+        let mut after_first = false;
         for ref id in idents {
+            if after_first {
+                self.write(sep)?;
+            }
             self.write(id)?;
-            self.write(sep)?;
+            after_first = true;
         }
         Ok(())
+    }
+
+    fn write_separated_expr(&mut self, sep: &str, exprs: &[Expr]) -> Res<()> {
+        let mut after_first = false;
+        for ref id in exprs {
+            if after_first {
+                self.write(sep)?;
+            }
+            self.write_expr(id)?;
+            after_first = true;
+        }
+        Ok(())
+    }
+
+    pub fn into_inner(self) -> W {
+        self.writer
     }
 }
 
 impl<W> SqlWriter for MsSqlWriter<W>
 where W: Write {
     fn write_assignment(&mut self, node: &Assignment) -> Res<()> {
-        todo!()
+        self.write(&node.id)?;
+        self.write(" = ")?;
+        self.write_expr(&node.value)?;
+        self.write(";\n")
     }
     fn write_column_def(&mut self, node: &ColumnDef) -> Res<()> {
-        todo!()
+        self.write(&node.name)?;
+        self.write(" ")?;
+        self.write_data_type(&node.data_type)?;
+        if let Some(a) = &node.collation {
+            self.write(" COLLATE ")?;
+            self.write_object_name(a)?;
+        }
+        if !node.options.is_empty() {
+            for opt in &node.options {
+                self.write(" ")?;
+                self.write_column_options_def(&opt)?;
+            }
+        }
+        Ok(())
     }
     fn write_column_options_def(&mut self, node: &ColumnOptionDef) -> Res<()> {
+        if let Some(name) = &node.name {
+            self.write("CONSTRAINT ")?;
+            self.write(name)?;
+        }
+        self.write_column_option(&node.option)
+    }
+    fn write_cte(&mut self, _node: &Cte) -> Res<()> {
         todo!()
     }
-    fn write_cte(&mut self, node: &Cte) -> Res<()> {
+    fn write_fetch(&mut self, _node: &Fetch) -> Res<()> {
         todo!()
     }
-    fn write_fetch(&mut self, node: &Fetch) -> Res<()> {
-        todo!()
-    }
-    fn write_function(&mut self, node: &Function) -> Res<()> {
+    fn write_function(&mut self, _node: &Function) -> Res<()> {
         todo!()
     }
     fn write_join(&mut self, node: &Join) -> Res<()> {
+        let constraint = match &node.join_operator {
+            JoinOperator::Inner(con) => {
+                self.write("INNER JOIN ")?;
+                Some(con)
+            }
+            JoinOperator::LeftOuter(con) => {
+                self.write("LEFT OUTER JOIN ")?;
+                Some(con)
+            }
+            JoinOperator::FullOuter(con) => {
+                self.write("FULL OUTER JOIN ")?;
+                Some(con)
+            }
+            JoinOperator::RightOuter(con) => {
+                self.write("RIGHT OUTER JOIN ")?;
+                Some(con)
+            }
+            _ => todo!(),
+        };
+        self.write_table_factor(&node.relation)?;
+        self.write_new_line()?;
+        self.indent += 1;
+        self.write_prefix()?;
+        if let Some(constraint) = constraint {
+            self.write_join_constraint(constraint)?;
+        }
+        self.indent -= 1;
         todo!()
     }
     fn write_object_name(&mut self, node: &ObjectName) -> Res<()> {
-        self.write_seperated(".", &node.0)
+        self.write_separated(".", &node.0)
     }
-    fn write_order_by_expr(&mut self, node: &OrderByExpr) -> Res<()> {
+    fn write_order_by_expr(&mut self, _node: &OrderByExpr) -> Res<()> {
         todo!()
     }
     fn write_query(&mut self, node: &Query) -> Res<()> {
-        todo!()
+        if !node.ctes.is_empty() {
+            todo!("CTEs are not yet implemented")
+        }
+        self.write_set_expr(&node.body)?;
+        Ok(())
     }
     fn write_select(&mut self, node: &Select) -> Res<()> {
         self.write("SELECT ")?;
@@ -89,15 +168,16 @@ where W: Write {
         for table in &node.from {
             self.write_prefix()?;
             self.write_table_with_joins(table)?;
-            self.write_new_line()?;
         }
-        self.write_new_line()?;
         if let Some(wh) = &node.selection {
+            self.write_new_line()?;
             self.write("WHERE ")?;
             self.write_expr(wh)?;
         }
         
         if !node.group_by.is_empty() {
+            self.write_new_line()?;
+            self.write_prefix()?;
             self.write("GROUP BY ")?;
             let mut past_first = false;
             for group in &node.group_by {
@@ -109,31 +189,57 @@ where W: Write {
             }
         }
         if let Some(having) = &node.having {
+            self.write_new_line()?;
+            self.write_prefix()?;
             self.write("HAVING ")?;
             self.write_expr(having)?;
         }
-
         Ok(())
     }
-    fn write_sql_option(&mut self, node: &SqlOption) -> Res<()> {
+    fn write_sql_option(&mut self, _node: &SqlOption) -> Res<()> {
         todo!()
     }
-    fn write_table_alias(&mut self, node: &TableAlias) -> Res<()> {
+    fn write_table_alias(&mut self, _node: &TableAlias) -> Res<()> {
         todo!()
     }
     fn write_table_with_joins(&mut self, node: &TableWithJoins) -> Res<()> {
+        match &node.relation {
+            TableFactor::Table {
+                ref alias,
+                ref args,
+                ref name,
+                ref with_hints,
+            } => {
+                self.write_object_name(name)?;
+                if let Some(ref a) = alias {
+                    self.write(" AS ")?;
+                    self.write_table_alias(a)?;
+                }
+                if !args.is_empty() {
+                    self.write(" (")?;
+                    self.write_separated_expr(", ", args)?;
+                    self.write(")")?;
+                }
+                if !with_hints.is_empty() {
+                    self.write(" WITH (")?;
+                    self.write_separated_expr(", ", with_hints)?;
+                    self.write(")")?;
+                }
+            },
+            _ => todo!(),
+        }
+        Ok(())
+    }
+    fn write_values(&mut self, _node: &Values) -> Res<()> {
         todo!()
     }
-    fn write_values(&mut self, node: &Values) -> Res<()> {
+    fn write_window_frame(&mut self, _node: &WindowFrame) -> Res<()> {
         todo!()
     }
-    fn write_window_frame(&mut self, node: &WindowFrame) -> Res<()> {
+    fn write_window_spec(&mut self, _node: &WindowSpec) -> Res<()> {
         todo!()
     }
-    fn write_window_spec(&mut self, node: &WindowSpec) -> Res<()> {
-        todo!()
-    }
-    fn write_alter_table_operation(&mut self, node: &AlterTableOperation) -> Res<()> {
+    fn write_alter_table_operation(&mut self, _node: &AlterTableOperation) -> Res<()> {
         todo!()
     }
     fn write_binary_operator(&mut self, node: &BinaryOperator) -> Res<()> {
@@ -157,12 +263,41 @@ where W: Write {
         self.write(s)
     }
     fn write_column_option(&mut self, node: &ColumnOption) -> Res<()> {
+        match &node {
+            ColumnOption::Null => self.write("NULL"),
+            ColumnOption::NotNull => self.write("NOT NULL"),
+            ColumnOption::Default(expr) => {
+                self.write("DEFAULT")?;
+                self.write_expr(expr)
+            },
+            ColumnOption::Unique { is_primary } => {
+                if *is_primary {
+                    self.write("PRIMARY KEY")
+                } else {
+                    self.write("UNIQUE")
+                }
+            },
+            ColumnOption::ForeignKey {
+                foreign_table,
+                referred_columns,
+            } => {
+                self.write("FOREIGN KEY ")?;
+                self.write_object_name(foreign_table)?;
+                self.write(" (")?;
+                self.write_separated(" ", referred_columns)?;
+                self.write(")")
+            }
+            ColumnOption::Check(expr) => {
+                self.write("CHECK (")?;
+                self.write_expr(expr)?;
+                self.write(")")
+            }
+        }
+    }
+    fn write_data_type(&mut self, _node: &DataType) -> Res<()> {
         todo!()
     }
-    fn write_data_type(&mut self, node: &DataType) -> Res<()> {
-        todo!()
-    }
-    fn write_date_time_field(&mut self, node: &DateTimeField) -> Res<()> {
+    fn write_date_time_field(&mut self, _node: &DateTimeField) -> Res<()> {
         todo!()
     }
     fn write_expr(&mut self, node: &Expr) -> Res<()> {
@@ -170,11 +305,11 @@ where W: Write {
             Expr::Identifier(ref id) => self.write(id),
             Expr::Wildcard => self.write("*"),
             Expr::QualifiedWildcard(ref idents) => {
-                self.write_seperated(".", &idents)?;
+                self.write_separated(".", &idents)?;
                 self.write(".*")
             },
             Expr::CompoundIdentifier(ref idents) => {
-                self.write_seperated(".", idents)
+                self.write_separated(".", idents)
             },
             Expr::IsNull(ref expr) => {
                 self.write_expr(expr)?;
@@ -237,16 +372,16 @@ where W: Write {
                 self.write(" ")?;
                 self.write_expr(expr)
             },
-            Expr::Cast { expr, data_type } => {
+            Expr::Cast { .. } => {
                 todo!()
             },
-            Expr::Extract { field, expr } => {
+            Expr::Extract { .. } => {
                 todo!()
             },
-            Expr::Collate { expr, collation } => {
+            Expr::Collate { .. } => {
                 todo!()
             },
-            Expr::Nested(expr) => {
+            Expr::Nested(_expr) => {
                 todo!()
             },
             Expr::Value(ref val) => {
@@ -255,11 +390,7 @@ where W: Write {
             Expr::Function(ref f) => {
                 self.write_function(f)
             },
-            Expr::Case {
-                operand,
-                conditions,
-                results,
-                else_result,
+            Expr::Case { ..
             } => {
                 todo!()
             },
@@ -269,19 +400,19 @@ where W: Write {
             Expr::Subquery(ref query) => {
                 self.write_query(query)
             },
-            _ => todo!(),
         }
     }
-    fn write_file_format(&mut self, node: &FileFormat) -> Res<()> {
+    fn write_file_format(&mut self, _node: &FileFormat) -> Res<()> {
         todo!()
     }
-    fn write_join_constraint(&mut self, node: &JoinConstraint) -> Res<()> {
+    fn write_join_constraint(&mut self, _node: &JoinConstraint) -> Res<()> {
         todo!()
     }
-    fn write_join_operator(&mut self, node: &JoinOperator) -> Res<()> {
+    fn write_join_operator(&mut self, _node: &JoinOperator) -> Res<()> {
+        
         todo!()
     }
-    fn write_object_type(&mut self, node: &ObjectType) -> Res<()> {
+    fn write_object_type(&mut self, _node: &ObjectType) -> Res<()> {
         todo!()
     }
     fn write_select_item(&mut self, node: &SelectItem) -> Res<()> {
@@ -301,33 +432,43 @@ where W: Write {
         Ok(())
     }
     fn write_set_expr(&mut self, node: &SetExpr) -> Res<()> {
+        match node {
+            SetExpr::Select(s) => self.write_select(s),
+            SetExpr::Query(q) => self.write_query(q),
+            SetExpr::SetOperation{
+                ..
+            } => todo!("SetExpr::SetOperation is not yet implemented"),
+            SetExpr::Values(values) => self.write_values(values),
+        }
+    }
+    fn write_set_operator(&mut self, _node: &SetOperator) -> Res<()> {
         todo!()
     }
-    fn write_set_operator(&mut self, node: &SetOperator) -> Res<()> {
+    fn write_set_variable_value(&mut self, _node: &SetVariableValue) -> Res<()> {
         todo!()
     }
-    fn write_set_variable_value(&mut self, node: &SetVariableValue) -> Res<()> {
-        todo!()
-    }
-    fn write_show_statement_filter(&mut self, node: &ShowStatementFilter) -> Res<()> {
+    fn write_show_statement_filter(&mut self, _node: &ShowStatementFilter) -> Res<()> {
         todo!()
     }
     fn write_statement(&mut self, node: &Statement) -> Res<()> {
+        match node {
+            Statement::Query(q) => self.write_query(q),
+            _ => todo!()
+        }
+    }
+    fn write_table_constraint(&mut self, _node: &TableConstraint) -> Res<()> {
         todo!()
     }
-    fn write_table_constraint(&mut self, node: &TableConstraint) -> Res<()> {
+    fn write_table_factor(&mut self, _node: &TableFactor) -> Res<()> {
         todo!()
     }
-    fn write_table_factor(&mut self, node: &TableFactor) -> Res<()> {
+    fn write_transaction_access_mode(&mut self, _node: &TransactionAccessMode) -> Res<()> {
         todo!()
     }
-    fn write_transaction_access_mode(&mut self, node: &TransactionAccessMode) -> Res<()> {
+    fn write_transaction_isolation_level(&mut self, _node: &TransactionIsolationLevel) -> Res<()> {
         todo!()
     }
-    fn write_transaction_isolation_level(&mut self, node: &TransactionIsolationLevel) -> Res<()> {
-        todo!()
-    }
-    fn write_transaction_mode(&mut self, node: &TransactionMode) -> Res<()> {
+    fn write_transaction_mode(&mut self, _node: &TransactionMode) -> Res<()> {
         todo!()
     }
     fn write_unary_operator(&mut self, node: &UnaryOperator) -> Res<()> {
@@ -372,10 +513,53 @@ where W: Write {
         };
         self.write(&s)
     }
-    fn write_window_frame_bound(&mut self, node: &WindowFrameBound) -> Res<()> {
+    fn write_window_frame_bound(&mut self, _node: &WindowFrameBound) -> Res<()> {
         todo!()
     }
-    fn write_window_frame_units(&mut self, node: &WindowFrameUnits) -> Res<()> {
+    fn write_window_frame_units(&mut self, _node: &WindowFrameUnits) -> Res<()> {
         todo!()
     }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn basic_select() {
+        let s = Select {
+            distinct: false,
+            projection: vec![
+               SelectItem::UnnamedExpr(Expr::Identifier("first".to_string())),
+               SelectItem::UnnamedExpr(Expr::Identifier("second".to_string())),
+               SelectItem::UnnamedExpr(Expr::Identifier("thrid".to_string())),
+               SelectItem::UnnamedExpr(Expr::Identifier("fourth".to_string())),
+               SelectItem::UnnamedExpr(Expr::Identifier("fifth".to_string())),
+           ],
+           from: vec![TableWithJoins {
+               relation: TableFactor::Table {
+                   name: ObjectName(vec!["table".to_string()]),
+                   alias: None,
+                   args: vec![],
+                   with_hints: vec![],
+               },
+               joins: vec![],
+           }],
+           selection: None,
+           group_by: vec![],
+           having: None,
+        };
+        let mut w = MsSqlWriter {
+            indent: 0,
+            prefix: "    ",
+            current_line_len: 0,
+            writer: Vec::new(),
+        };
+        w.write_select(&s).unwrap();
+        let v = w.into_inner();
+        let out = String::from_utf8(v).unwrap();
+        assert_eq!(out, "SELECT first, second, thrid, fourth, fifth
+FROM table")
+    }
+
 }

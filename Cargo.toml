@@ -8,3 +8,8 @@ edition = "2018"
 
 [dependencies]
 sqlparser = "0.5"
+
+
+[[bin]]
+name = "realrun"
+path = "src/realrun.rs"
